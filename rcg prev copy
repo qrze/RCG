@@ -1,0 +1,93 @@
+import { ExponentialCost, FirstFreeCost } from "./api/Costs";
+import { Localization } from "./api/Localization";
+import { BigNumber } from "./api/BigNumber";
+import { theory } from "./api/Theory";
+import { Utils } from "./api/Utils";
+
+var id = "resonant_circuit";
+var name = "Resonant Circuit Growth";
+var description = "Simulate an oscillating circuit with resonance boosting rho.";
+var authors = "pwrraissedd";
+var version = 1;
+
+var currency;
+var a1, a2, R, L, C;
+
+var q1 = BigNumber.ONE;
+var q2 = BigNumber.ONE;
+var t = BigNumber.ZERO;
+var omega = BigNumber.ONE;
+
+var init = () => {
+    currency = theory.createCurrency();
+
+    // --- Upgrades ---
+    a1 = theory.createUpgrade(0, currency, new FirstFreeCost(new ExponentialCost(10, 2)));
+    a1.getDescription = () => "a1 = " + getA1(a1.level);
+    a1.getInfo = () => "Current boost";
+
+    a2 = theory.createUpgrade(1, currency, new ExponentialCost(15, 2.2));
+    a2.getDescription = () => "a2 = " + getA2(a2.level);
+    a2.getInfo = () => "Voltage boost";
+
+    R = theory.createUpgrade(2, currency, new ExponentialCost(20, 2.5));
+    R.getDescription = () => "R = " + getR(R.level);
+
+    L = theory.createUpgrade(3, currency, new ExponentialCost(25, 2.3));
+    L.getDescription = () => "L = " + getL(L.level);
+
+    C = theory.createUpgrade(4, currency, new ExponentialCost(25, 2.3));
+    C.getDescription = () => "C = " + getC(C.level);
+};
+
+var tick = (elapsedTime, multiplier) => {
+    let dt = BigNumber.from(elapsedTime * multiplier);
+
+    t += dt;
+
+    const r = getR(R.level);
+    const l = getL(L.level);
+    const c = getC(C.level);
+
+    // Resonance frequency ω = 1 / sqrt(LC)
+    omega = BigNumber.ONE.div(BigNumber.sqrt(l * c));
+
+    // Current
+    q1 = getA1(a1.level) * t * BigNumber.exp(r.neg());
+
+    // Voltage
+    q2 = getA2(a2.level) * BigNumber.log(BigNumber.ONE + l * t);
+
+    // Oscillation factor
+    let osc = BigNumber.ONE + BigNumber.sin(omega * t);
+
+    // Main rho growth
+    let rhoDot = q1 * q2 * osc;
+
+    currency.value += rhoDot * dt;
+
+    theory.invalidatePrimaryEquation();
+};
+
+var getPrimaryEquation = () => {
+    return "\\dot{\\rho} = q_1 q_2 (1 + \\sin(\\omega t))";
+};
+
+var getSecondaryEquation = () => {
+    return "\\omega = 1/\\sqrt{LC}";
+};
+
+var getTertiaryEquation = () => {
+    return "q_1=" + q1.toString(2) + "\\quad q_2=" + q2.toString(2);
+};
+
+// --- Upgrade functions ---
+
+var getA1 = (level) => Utils.getStepwisePowerSum(level, 2, 10, 0);
+var getA2 = (level) => BigNumber.from(level + 1).pow(1.2);
+
+var getR = (level) => BigNumber.from(level * 0.05 + 1);
+var getL = (level) => BigNumber.from(level + 1);
+var getC = (level) => BigNumber.from(level + 1);
+
+init();
