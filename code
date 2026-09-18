@@ -1,93 +1,241 @@
-import { ExponentialCost, FirstFreeCost } from "./api/Costs";
+//uses code from davidcondrey on stack exchange, xelaroc (alexcord#6768) and Gilles-Philippe Paillé(#0778). 
+
+import { ExponentialCost, FirstFreeCost, LinearCost, CustomCost } from "./api/Costs"; //make sure to use
 import { Localization } from "./api/Localization";
-import { BigNumber } from "./api/BigNumber";
+import { parseBigNumber, BigNumber } from "./api/BigNumber";
 import { theory } from "./api/Theory";
 import { Utils } from "./api/Utils";
 
-var id = "resonant_circuit";
+var id = "rescircuit";
 var name = "Resonant Circuit Growth";
-var description = "Simulate an oscillating circuit with resonance boosting rho.";
-var authors = "pwrraissedd";
-var version = 1;
+var description = "You've gotten a PhD in Systems & Control. /n You use your intellect to construct an equation. /n/n But does it diverge, or does it converge?";
+var authors = "mel";
+var version = 1.1.1; //major, minor, patch
+var releaseOrder = "1";
 
-var currency;
-var a1, a2, R, L, C;
+requiresGameVersion("1.4.33");
 
-var q1 = BigNumber.ONE;
-var q2 = BigNumber.ONE;
-var t = BigNumber.ZERO;
-var omega = BigNumber.ONE;
+var tauMultiplier = TBD;
+
+var rho = theory.createCurrency(), tau = theory.createCurrency();
+var a1, a2, R, L; C;
+var numPublications = 0;
 
 var init = () => {
-    currency = theory.createCurrency();
+    rho.value = 1;
+    theory.primaryEquationHeight = 70;
+    theory.secondaryEquationHeight = 35;
+    theory.secondaryEquationScale = 1.25;
 
-    // --- Upgrades ---
-    a1 = theory.createUpgrade(0, currency, new FirstFreeCost(new ExponentialCost(10, 2)));
-    a1.getDescription = () => "a1 = " + getA1(a1.level);
-    a1.getInfo = () => "Current boost";
+    // Regular Upgrades
+    // a1
+    {
+        let getDesc = (level) => "a_1=" + geta1(level).toString(1); // balancing TBD
+        let getInfo = (level) => "a_1=" + geta1(level).toString(1);
+        a1 = theory.createUpgrade(0, rho, new FirstFreeCost(new ExponentialCost(1, 0.369*Math.log2(10)))); 
+        a1.getDescription = (amount) => Utils.getMath(getDesc(a1.level)); 
+        a1.getInfo = (amount) => Utils.getMathTo(getInfo(a1.level), getInfo(a1.level + amount)); 
+    }
 
-    a2 = theory.createUpgrade(1, currency, new ExponentialCost(15, 2.2));
-    a2.getDescription = () => "a2 = " + getA2(a2.level);
-    a2.getInfo = () => "Voltage boost";
+    // a2
+    {
+        let getDesc = (level) => "a_2=2^{" + level + "}"; // balancing TBD
+        let getInfo = (level) => "a_2=" + geta2(level).toString(0); 
+        a2 = theory.createUpgrade(1, currency, new ExponentialCost(175, Math.log2(10))); 
+        a2.getDescription = (_) => Utils.getMath(getDesc(a2.level)); 
+        a2.getInfo = (amount) => Utils.getMathTo(getInfo(a2.level), getInfo(a2.level + amount)); 
+    }
 
-    R = theory.createUpgrade(2, currency, new ExponentialCost(20, 2.5));
-    R.getDescription = () => "R = " + getR(R.level);
+    // R
+    {
+        let getDesc = (level) => "b_1=" + getb1(level).toString(1); // balancing TBD
+        let getInfo = (level) => "b_1=" + getb1(level).toString(1); 
+        b1 = theory.createUpgrade(2, currency, new ExponentialCost(500, 0.649*Math.log2(10))); 
+        b1.getDescription = (amount) => Utils.getMath(getDesc(b1.level)); 
+        b1.getInfo = (amount) => Utils.getMathTo(getInfo(b1.level), getInfo(b1.level + amount)); 
+    }
+    
+    // L
+    {
+        let getDesc = (level) => "b_2=2^{" + level + "}"; // balancing TBD
+        let getInfo = (level) => "b_2=" + getb2(level).toString(0);
+        b2 = theory.createUpgrade(3, currency, new ExponentialCost(1000, 0.926*Math.log2(10))); 
+        b2.getDescription = (_) => Utils.getMath(getDesc(b2.level));  
+        b2.getInfo = (amount) => Utils.getMathTo(getInfo(b2.level), getInfo(b2.level + amount)); 
+    }
 
-    L = theory.createUpgrade(3, currency, new ExponentialCost(25, 2.3));
-    L.getDescription = () => "L = " + getL(L.level);
+    // C
+    {
+        let getDesc = (level) => "b_2=2^{" + level + "}"; // balancing TBD
+        let getInfo = (level) => "b_2=" + getb2(level).toString(0); 
+        b2 = theory.createUpgrade(3, currency, new ExponentialCost(1000, 0.926*Math.log2(10))); 
+        b2.getDescription = (_) => Utils.getMath(getDesc(b2.level));  
+        b2.getInfo = (amount) => Utils.getMathTo(getInfo(b2.level), getInfo(b2.level + amount)); 
+    
+    // Permanent Upgrades
+    theory.createPublicationUpgrade(0, rho, 1e10 ); //unlock publications at 1e10 currency // balancing TBD
+    theory.createBuyAllUpgrade(1, rho, 1e15); //unlock buy all at 1e15 currency
+    theory.createAutoBuyerUpgrade(2, rho, 1e20); //unlock autobuyer at 1e20 currency
 
-    C = theory.createUpgrade(4, currency, new ExponentialCost(25, 2.3));
-    C.getDescription = () => "C = " + getC(C.level);
-};
 
+  // ALL OF THIS NEEDS RO BE CHANGED
 var tick = (elapsedTime, multiplier) => {
-    let dt = BigNumber.from(elapsedTime * multiplier);
 
-    t += dt;
+    let dt = BigNumber.from(elapsedTime * multiplier); //find tick time
+    
+    rho3dot = (getb1(b1.level).pow(BigNumber.ONE + gamma2.level*BigNumber.From(0.02)) * getb2(b2.level).pow(BigNumber.ONE + gamma3.level*BigNumber.From(0.02))); //rho3dot is equal to b1.value * b2.value accounting for exponenents
+    currency3.value += rho3dot*dt; //increase currency3.value by rho3dot*dt
+    updateInverseE_Gamma();
+   
+    //rho2dot equation that supports higher values without crashing lol
+    let a1v = geta1(a1.level), a2v = geta2(a2.level);
+//    rho2dot =(geta1(a1.level) * geta2(a2.level) * (BigNumber.TWO-gamma1.level*0.004).pow( - currency3.value.log() )); //calculate rho2dot, accounting for milestones
+    rho2dot = a1v > 0 && a2v > 0 ? BigNumber.E.pow(a1v.log() + a2v.log() - (BigNumber.TWO-gamma1.level*0.008).log() * (currency3.value).log() ) : BigNumber.ZERO;
+    currency2.value += dt * rho2dot; //increase rho2 by rho2dot by dt
+    rho1dot = (currency2.value.pow(BigNumber.ONE+gamma0.level*0.02).sqrt()*(inverseE_Gamma)); //rho1dot is equal to the root of rho2^milestone, over the difference between E and stirling's approximation
+    currency.value += dt * theory.publicationMultiplier * rho1dot; //increase rho1 by rho1dot by dt, accounting for pub bonus
+    
+    t += elapsedTime;
+    theory.invalidateTertiaryEquation();
+    
+}
 
-    const r = getR(R.level);
-    const l = getL(L.level);
-    const c = getC(C.level);
+//display rho1dot equation ALL OF THIS IS COPIED AND NEEDS TO BE CHANGED
+var getPrimaryEquation = () => { //text for the primary equation
 
-    // Resonance frequency ω = 1 / sqrt(LC)
-    omega = BigNumber.ONE.div(BigNumber.sqrt(l * c));
+    let result = "\\dot{\\rho}_1 = \\frac{\\sqrt{\\rho_2";
+    switch (gamma0.level){ //switch statement based on milestone 1 to add an exponent to rho2
+        //should probably use something else but i tried using just a (gamma0.level*0.1).toString(1) and it threw a hissy fit
+        case 1:
+            result += "^{1.02}";
+            break;
+        case 2:
+            result += "^{1.04}";
+            break;
+        case 3:
+            result += "^{1.06}";
+            break;    
+    }
+    result +="}}{e-\\gamma}";  //close off the square root and add the denominator
 
-    // Current
-    q1 = getA1(a1.level) * t * BigNumber.exp(r.neg());
+    //show the approximated value equation
+    result += "\\qquad \\gamma = \\frac{\\rho_3}{\\sqrt[^{\\rho_3}]{\\rho_3 !}}";
+    result += "\\qquad" + theory.latexSymbol + "= \\max{\\rho_1}^{0.4}"; 
+    return result; //return the sum of text
+}   
 
-    // Voltage
-    q2 = getA2(a2.level) * BigNumber.log(BigNumber.ONE + l * t);
+//display rho2dot, rho3dot and a_3 equation
+var getSecondaryEquation = () => { 
+    //render rho2dot equation
+    result = "\\dot{\\rho}_2 = a_1 a_2 \\cdot a_3 ^{ - \\ln\\rho_3}\\qquad "; //static, doesn't need to change. plain latex
 
-    // Oscillation factor
-    let osc = BigNumber.ONE + BigNumber.sin(omega * t);
 
-    // Main rho growth
-    let rhoDot = q1 * q2 * osc;
+    result += "{\\dot{\\rho}}_3 = b_1"; // first part of eq, i.e rho3dot = b1
+    switch (gamma2.level){ //switch statemement based on the third milestone (b1 exponent) to add exponents if the milestone level is 1 - 4
+        case 1:
+            result+= "^{\\!1.02}\\!";
+            break;
+        case 2:
+            result+= "^{\\!1.04}\\!";
+            break;
+    }
+    result += "b_2"; //add b2 
+    switch (gamma3.level){ //switch statemement based on the fourth milestone (b2 exponent) to add exponents if the milestone level is 1 - 4
+        case 1:
+            result+= "^{\\!1.02}\\!";
+            break;
+        case 2:
+            result+= "^{\\!1.04}\\!";
+            break;
+    }
+    result += "\\qquad "; //add a space
 
-    currency.value += rhoDot * dt;
+    //render a_3 = 2.x
+    result += "a_3 = "; //render a3=
+    switch (gamma1.level){ //switch statement based on milestone 2 to change the displayed value of a3
+        case 0:
+            result += "2";
+            break;
+        case 1:
+            result += "1.992";
+            break;
+        case 2:
+            result += "1.984";
+            break;
+        case 3:
+            result += "1.976";
+            break;
+        case 4:
+            result += "1.968";
+            break;
+        case 5:
+            result += "1.96";
+            break;            
+    }
+    return result; //return the sum of text
+}
 
-    theory.invalidatePrimaryEquation();
-};
-
-var getPrimaryEquation = () => {
-    return "\\dot{\\rho} = q_1 q_2 (1 + \\sin(\\omega t))";
-};
-
-var getSecondaryEquation = () => {
-    return "\\omega = 1/\\sqrt{LC}";
-};
-
+//display values considered useful that aren't in the currency bar
 var getTertiaryEquation = () => {
-    return "q_1=" + q1.toString(2) + "\\quad q_2=" + q2.toString(2);
-};
+    let result = "e - \\gamma = ";
+    if(inverseE_Gamma <= 10000)
+    result += (BigNumber.ONE/inverseE_Gamma).toString(4);
+else { 
+    let exp = 1+Math.floor(inverseE_Gamma.log10().toNumber()),
+        mts = ((BigNumber.TEN.pow(exp)/inverseE_Gamma).toString());
+    result += `${mts}e\\text{-}${exp}`
+}
+    result +=", \\;\\dot{\\rho}_2 = "; //display rho2dot to a degree of granularity depending on its size, then move to next segment 
+    result += rho2dot.toString(3);
 
-// --- Upgrade functions ---
+    result += ", \\;\\dot{\\rho}_3 = "; //display rho3dot to a degree of granularity depending on its size, then move to next segment 
+    result += rho3dot.toString(3);
 
-var getA1 = (level) => Utils.getStepwisePowerSum(level, 2, 10, 0);
-var getA2 = (level) => BigNumber.from(level + 1).pow(1.2);
+    return result ; //return the sum of text    
 
-var getR = (level) => BigNumber.from(level * 0.05 + 1);
-var getL = (level) => BigNumber.from(level + 1);
-var getC = (level) => BigNumber.from(level + 1);
+}
 
+var getEquationOverlay = () => ui.createGrid({
+    onTouched: (e) => {
+        if (e.type != TouchType.PRESSED) return;
+        tapCount++;
+    }
+})
+
+var postPublish = ()  => {
+    //force update all equations
+    theory.invalidatePrimaryEquation(); 
+    theory.invalidateSecondaryEquation();
+    theory.invalidateTertiaryEquation();
+    t = 0; //set time since publish to 0
+
+    currency3.value = BigNumber.ONE;
+    updateInverseE_Gamma();
+
+    numPublications++; //increase number of publications
+}
+
+var setInternalState = (state) => { //set the internal state of values that need to be kept post switch that aren't levels
+    let values = state.split(" "); //save values to a string
+    if (values.length > 0) numPublications = parseInt(values[0]); //save the value of publish numbers to slot 0
+    if (values.length > 1) inverseE_Gamma = parseBigNumber(values[1]); //save the value of inverseE_Gamma numbers to slot 1
+    if (values.length > 2) tapCount = parseInt(values[2]);
+    if (values.length > 3) t = Number.parseFloat(values[3]);
+}
+
+var getInternalState = () => `${numPublications} ${inverseE_Gamma} ${tapCount} ${t}` //return the data saved
+
+var getPublicationMultiplier = (tau) => tau.pow(1.5/tauMultiplier); //publication mult bonus is (tau^0.15)*100
+var getPublicationMultiplierFormula = (symbol) => /*"10 · " +*/ symbol + "^{0.375}"; //text to render for publication mult ext
+var getTau = () => currency.value.pow(BigNumber.from(0.1*tauMultiplier));
+var getCurrencyFromTau = (tau) => [tau.max(BigNumber.ONE).pow(10/tauMultiplier), currency.symbol];
+var get2DGraphValue = () => (BigNumber.ONE + currency.value.abs()).log10().toNumber(); //renders the graph based on currency 1
+
+var geta1 = (level) => Utils.getStepwisePowerSum(level, 3.5, 3, 0); //get the value of the variable from a power sum with a level of <level>, a base of 2, a step length of 5 and an initial value of 0 
+var geta2 = (level) => BigNumber.TWO.pow(level); //get the value of the variable from a power of 2^level
+var getb1 = (level) => Utils.getStepwisePowerSum(level, 6.5, 4, 0); //get the value of the variable from a power sum with a level of <level>, a base of 3, a step length of 2 and an initial value of 0
+var getb2 = (level) => BigNumber.TWO.pow(level); //get the value of the variable from a power of 2^level
+
+
+// im js gonna publish rn and get back ts in like a couple months, credit to elipses for the code, most of it will be changed i js need the structure (1.1.1)
 init();
